@@ -1,7 +1,7 @@
 %% Multivariate Analysis of Steinmetz neuron spikes by various regions 
 % Run first: openSession or first two blocks of exploreSteinmetz
 clear all; close all; clc
-sesPath = '../../data/Steinmetz/Cori_2016-12-18'; % sample with both motor and sensory areas
+sesPath = '../data/Steinmetz/Cori_2016-12-18'; % sample with both motor and sensory areas
 
 %% Read in spike data .. ~5 sec and construct some convenience variables
 % Note that regions are indexed common style from 1 to regions.N, but neurons are indexed Python-style from 0 to neurons.N-1
@@ -42,21 +42,35 @@ wheelframe2timeSlope = (S.wheel.timestamps(2,2)-S.wheel.timestamps(1,2))/(S.whee
 
 %% PSTH (align to visual stimulus)
 areaID = 10; % for area VISp
+win = [-0.5,0.5];
+binSize = 0.02;
+selectedEvents = stimTimes;
+
 clusterIDs = find(neurons.region==areaID);
 nClusters = length(clusterIDs);
 for idx = 1:nClusters
     spikes(idx).clu = (clusterIDs(idx));
     spikes(idx).spikeIndex = find(S.spikes.clusters(:)==spikes(idx).clu);
     spikes(idx).spiketimes = S.spikes.times(spikes(idx).spikeIndex);
+    
+    %organize into matrix around stimTime:
+    [spikes(idx).psth, bins, spikes(idx).rasterX, spikes(idx).rasterY, spikes(idx).spikeCounts, spikes(idx).binnedArray] = psthAndBA(spikes(idx).spiketimes, selectedEvents, win, binSize);
 end
 
-win = [-0.5,0.5];
+for idx = 1:20
+    figure; 
+    bar(bins,spikes(idx).psth);
+end
+
 sm =  0.25;
 colors = turbo(100);
 for idx = 1:20
     figure; tiledlayout(2,1); nexttile; axR = gca; nexttile; axP = gca;
     rasterAndPSTHbyCond(spikes(idx).spiketimes, stimTimes, trials.contrast, win, sm, colors, axR, axP)
 end
+
+
+
 st = S.spikes.times(inTrial); %trim to spikes in trial period only
 
 
