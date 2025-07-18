@@ -1,27 +1,35 @@
-%% Multivariate Analysis of Steinmetz neuron spikes by various regions 
-% Run first: openSession or first two blocks of exploreSteinmetz
 clear all; close all; clc
-sesPath = '../data/Steinmetz/Cori_2016-12-18'; % sample with both motor and sensory areas
 
-%% Read in spike data .. ~5 sec and construct some convenience variables
-% Note that regions are indexed common style from 1 to regions.N, but neurons are indexed Python-style from 0 to neurons.N-1
-[S, regions, neurons, trials] = stOpenSession(sesPath);  % load .npy files in which data stored
+%% set ALL your settings here:
+% Session(s) and Brain area(s):
+    sesPath = '../data/Steinmetz/Cori_2016-12-18'; % sample with both motor and sensory areas
+    areaID = 10; % hard-coded index for area VISp at the moment (once we are ready to include a second brain structure, Nick can write a quick function that looks for the string of the desired brain area(s) and returns the correct index number to select it)
 
-%% Book-keeping
-sessionTime = S.spikes.times(end); % total time, assuming start at 0
-stimTimes = trials.visStimTime; 
-respTimes = trials.responseTime;
-goTimes = S.trials.goCue_times;
-% construct logical variable for spike timestamps in trials
-inTrial = false(size(S.spikes.times,1),1);
-for kk = 1:trials.N
-    inTrial( S.spikes.times > stimTimes(kk) & S.spikes.times < respTimes(kk) ) = true;
-end
+% PSTH parameters:
+    selectedEvents = 'stimTimes'; %event you want the PSTH to be centered on. (make sure to input it as a string)
+    win = [-2,2.5]; % window for psth in seconds: [seconds before event, seconds after event]
+    binSize = 0.02; % bin size for psth in seconds
+    numOfIndividualPSTHsToPlot = 20; % number of cells you want to make individual plots for (ex. set this to 20 to plot the first 20 cells)
 
-% Some useful book-keeping variables used frequently later
-neuronNumEdges = (0:neurons.N) - 0.5; % bin edges for using histcounts to count neuron cluster IDs in spikes
+%% Load data and declare variables:
+% load data:
+    [S, regions, neurons, trials] = stOpenSession(sesPath);  % load .npy files in which data stored; % Note that regions are indexed common style from 1 to regions.N, but neurons are indexed Python-style from 0 to neurons.N-1
+% declare variables:    
+    clusterIDs = find(neurons.region==areaID); % find the clusterIDs specific to the selected brain area
+    sessionTime = S.spikes.times(end); % total time, assuming start at 0
+    stimTimes = trials.visStimTime; 
+    respTimes = trials.responseTime;
+    goTimes = S.trials.goCue_times;
+        [selectedEvents] = SelectEventVariableFromString(selectedEvents,stimTimes,respTimes,goTimes); %produces the times of your desired event (function located at bottom of script)
 
-%% Parameters to convert between frame numbers for behavior and time in seconds
+% not used at the moment, but probably the best way to select selected trial types 
+% % % construct logical variable for spike timestamps in trials
+% % % inTrial = false(size(S.spikes.times,1),1);
+% % % for kk = 1:trials.N
+% % %     inTrial( S.spikes.times > stimTimes(kk) & S.spikes.times < respTimes(kk) ) = true;
+% % % end
+
+%% (not used yet, but will be useful) Parameters to convert between frame numbers for behavior and time in seconds
 % The generic way to select frame for X corresponding to a time T is: myFrame = round(( T - XInt)/XSlope
 % The generic way to assign a time corresponding to a frame is: myT = XInt + XSlope * frame
 % These are mostly to derive time ranges from frame ranges; one must count the numbers of frames
@@ -37,12 +45,9 @@ end
 wheelframe2timeInt = S.wheel.timestamps(1,2); % usually 10 - 20 sec after recording start
 wheelframe2timeSlope = (S.wheel.timestamps(2,2)-S.wheel.timestamps(1,2))/(S.wheel.timestamps(2,1)-S.wheel.timestamps(1,1)); % ~ 1/2500Hz
 
-%% create structure
-areaID = 10; % for area VISp
-win = [-2,2.5];
-binSize = 0.02;
-selectedEvents = stimTimes;
-clusterIDs = find(neurons.region==areaID);
+%% create structure for the spikes we want to analyze 
+    % when we incorporate multiple brain areas, we can refactor this to produce a spike structure for each brain area. 
+    % alternativly, we could instead introduce a saving function at the end of the script, such that we could load up the processed data in another script later which analyzed multiple brain areas
 nClusters = length(clusterIDs);
 for idx = 1:nClusters
     spikes(idx).clu = (clusterIDs(idx));
@@ -53,29 +58,27 @@ for idx = 1:nClusters
     [spikes(idx).psth, bins, spikes(idx).rasterX, spikes(idx).rasterY, spikes(idx).spikeCounts, spikes(idx).binnedArray] = psthAndBA(spikes(idx).spiketimes, selectedEvents, win, binSize);
 end
 
-%% plot cells
-plotCells = 0; % set this to 1, and it will plot the first 20 cells so you can take a look
-if isequal(plotCells,1)
-sm =  0.25;
-colors = turbo(100);
-for idx = 1:20
-    figure; tiledlayout(2,1); nexttile; axR = gca; nexttile; axP = gca;
-    rasterAndPSTHbyCond(spikes(idx).spiketimes, stimTimes, trials.contrast, win, sm, colors, axR, axP)
-end
+%% plot individual cell's PSTH for first numOfIndividualPSTHsToPlot
+if gt(numOfIndividualPSTHsToPlot,0)
+    sm =  0.25; colors = turbo(100);
+    for idx = 1:numOfIndividualPSTHsToPlot
+        figure; tiledlayout(2,1); nexttile; axR = gca; nexttile; axP = gca;
+        rasterAndPSTHbyCond(spikes(idx).spiketimes, stimTimes, trials.contrast, win, sm, colors, axR, axP)
+    end
 end
 %%
 
-timeBinCenters = bins(1:end-1) + diff(bins)/2;
-startPostStimBinIdx = find(timeBinCenters >= 0, 1, 'first');
-if isempty(startPostStimBinIdx)
-    warning('Could not find a bin center at or after 0. Check your win/binSize and bins calculation.');
-    startPostStimBinIdx = 1; % Fallback to start from beginning if issue
-end
-endPostStimBinIdx = length(timeBinCenters); % End of the time series
-
-% This is the range of time bins for your post-stimulus activity
-postStimBinIndices = startPostStimBinIdx : endPostStimBinIdx;
-numPostStimBins = length(postStimBinIndices); % This will dynamically be 25 in your case
+% % timeBinCenters = bins(1:end-1) + diff(bins)/2;
+% % startPostStimBinIdx = find(timeBinCenters >= 0, 1, 'first');
+% % if isempty(startPostStimBinIdx)
+% %     warning('Could not find a bin center at or after 0. Check your win/binSize and bins calculation.');
+% %     startPostStimBinIdx = 1; % Fallback to start from beginning if issue
+% % end
+% % endPostStimBinIdx = length(timeBinCenters); % End of the time series
+% % 
+% % % This is the range of time bins for your post-stimulus activity
+% % postStimBinIndices = startPostStimBinIdx : endPostStimBinIdx;
+% % numPostStimBins = length(postStimBinIndices); % This will dynamically be 25 in your case
 
 %% Prepare data for PCA
 numTrials = size(spikes(1).psth, 2);
@@ -91,7 +94,6 @@ end
 
 %% Run PCA
 [eigenvectors_PCA, proj_PCA, eigenvalues_PCA, tsquared, explained, mu] = pca(neuralDataForPCA); % here are the default output names: [coeff, score, latent, tsquared, explained, mu] = pca(neuralDataForPCA);
-    % calculate singular values, and % var explain
     n = size(neuralDataForPCA, 1); % number of observations
     singularValues = sqrt(eigenvalues_PCA * (n - 1));
     totalVariance = sum(singularValues.^2);
@@ -99,11 +101,18 @@ end
 %% Plot PCA
 % bar(percentVariance,)
 bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
+bar(bins,abs(eigenvectors_PCA(:,1:5)),'stacked'); ylabel('component size'); xlabel('s');
 
+%% Running SVD as well (to confirm I am not fumbling with the PCA)
+[U,Smat,V] = svd(neuralDataForPCA,"econ");
+    Smat = diag(Smat); %singular values
+figure; bar(1:length(Smat),Smat); %scree plot
+    title('SVD scree plot'); ylabel('Singular Value'); xlabel('Component Number'); %xlim([0,10]); %uncomment to view just first 10
+figure; bar(bins,abs(V),'stacked'); %plot each component as raw eigenvalues
+    title("Components' explanatory power across the trial"); ylabel('component size'); xlabel('s');
+figure; bar(bins,abs(V).*Smat','stacked'); %plot each component weighted by its singular value
+    title("Weighted components' explanatory power across the trial"); ylabel('component size'); xlabel('s'); 
 
-%% Running SVD (because I think I am fumbling PCA)
-[U,S,V] = svd(neuralDataForPCA,"econ");
-S = diag(S);    
 
 
 %% STUFF I HAVENT GOT TO / LOOKED AT YET: %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -159,4 +168,21 @@ for rr = 1:4
         view(137,11); %title(titlestr); axis square;
     end
     title(regions.name(tempList(rr))); grid
+end
+
+
+%% FUNCTIONS %%%%% functions used internally in this script
+function [outputEventTimes] = SelectEventVariableFromString(stringInput,stimTimes,respTimes,goTimes)
+% quick dumb function that takes in the string you declared for the events 
+% you wanted to look at, and actually returns the values. This is necessary
+% if you want to declare this at the beginning of the script, because the
+% values (the variable) isn't defined at that point
+
+if isequal(stringInput,'stimTimes')
+    outputEventTimes = stimTimes;
+elseif isequal(stringInput,'respTimes')
+    outputEventTimes = respTimes;
+elseif isequal(stringInput,'goTimes')
+    outputEventTimes = goTimes;
+end
 end
