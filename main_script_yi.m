@@ -2,7 +2,7 @@
 % Run first: openSession or first two blocks of exploreSteinmetz
 clear all; close all; clc
 sesPath = '../data/Steinmetz/Cori_2016-12-18'; % sample with both motor and sensory areas
-
+addpath(genpath('../packages/spikes-master'))
 %% Read in spike data .. ~5 sec and construct some convenience variables
 % Note that regions are indexed common style from 1 to regions.N, but neurons are indexed Python-style from 0 to neurons.N-1
 [S, regions, neurons, trials] = stOpenSession(sesPath);  % load .npy files in which data stored
@@ -37,38 +37,31 @@ end
 wheelframe2timeInt = S.wheel.timestamps(1,2); % usually 10 - 20 sec after recording start
 wheelframe2timeSlope = (S.wheel.timestamps(2,2)-S.wheel.timestamps(1,2))/(S.wheel.timestamps(2,1)-S.wheel.timestamps(1,1)); % ~ 1/2500Hz
 
-%% create structure
+
+%% PSTH (align to visual stimulus)
 areaID = 10; % for area VISp
-win = [-2,2.5];
+win = [-0.5,0.5]; % Original window, -0.5s to +0.5s around stimTime
 binSize = 0.02;
-selectedEvents = stimTimes;
+selectedEvents = respTimes;
 clusterIDs = find(neurons.region==areaID);
 nClusters = length(clusterIDs);
+
+% Initialize 'bins' outside the loop if it's consistent for all neurons
+% (which it should be if win and binSize are fixed)
+% This way, `timeBinCenters` can be calculated once after the loop.
+bins = []; % Initialize it so it's guaranteed to exist for the calculation below
+
 for idx = 1:nClusters
     spikes(idx).clu = (clusterIDs(idx));
     spikes(idx).spikeIndex = find(S.spikes.clusters(:)==spikes(idx).clu);
     spikes(idx).spiketimes = S.spikes.times(spikes(idx).spikeIndex);
-    
+
     %organize into matrix around stimTime:
     [spikes(idx).psth, bins, spikes(idx).rasterX, spikes(idx).rasterY, spikes(idx).spikeCounts, spikes(idx).binnedArray] = psthAndBA(spikes(idx).spiketimes, selectedEvents, win, binSize);
+    % Note: `bins` here will be updated in each iteration,
+    % taking the value from the last `idx` iteration. This is generally fine
+    % if `win` and `binSize` are constant, as the bin edges will be the same.
 end
-
-%% plot cells
-plotCells = 0;
-if isequal(plotCells,1)
-for idx = 1:20
-    figure; 
-    bar(bins,spikes(idx).psth);
-end
-
-sm =  0.25;
-colors = turbo(100);
-for idx = 1:20
-    figure; tiledlayout(2,1); nexttile; axR = gca; nexttile; axP = gca;
-    rasterAndPSTHbyCond(spikes(idx).spiketimes, stimTimes, trials.contrast, win, sm, colors, axR, axP)
-end
-end
-%%
 
 
 timeBinCenters = bins(1:end-1) + diff(bins)/2;
@@ -85,26 +78,110 @@ numPostStimBins = length(postStimBinIndices); % This will dynamically be 25 in y
 
 %% Prepare data for PCA
 % Assuming `spikes(idx).psth` has dimensions `numTrials x 50`
-numTrials = size(spikes(1).psth, 2);
+numTrials = size(spikes(1).psth, 1);
 numTotalTimeBins = size(spikes(1).psth, 2); % This will be 50
 % nClusters is already defined above
 
 % Initialize the matrix for PCA with the correct number of columns
-% neuralDataForPCA = zeros(numTrials * nClusters, length(bins));
-neuralDataForPCA = zeros(nClusters, length(bins));
+neuralDataForPCA = zeros(numTrials * nClusters, numPostStimBins);
+
 for idx = 1:nClusters
-    % Each rows corresponds to a single neuron's PSTH across all trials
-    neuralDataForPCA(idx, :) = spikes(idx).psth;
+    % Each block of rows corresponds to a single neuron's PSTH across all trials
+    startRow = (idx - 1) * numTrials + 1;
+    endRow = idx * numTrials;
+    % Select only the post-stimulus part of the PSTH using the calculated indices
+    neuralDataForPCA(startRow:endRow, :) = spikes(idx).psth(:, postStimBinIndices);
 end
 
-% [coeff, score, latent, tsquared, explained, mu] = pca(neuralDataForPCA);
-[eigenvectors_PCA, proj_PCA, eigenvalues_PCA, tsquared, explained, mu] = pca(neuralDataForPCA);
-bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
+[coeff, score, latent, tsquared, explained, mu] = pca(neuralDataForPCA);
 
 disp('PCA Results:');
 disp(['Total variance explained by first 5 PCs: ', num2str(sum(explained(1:5))), '%']);
 disp('Percentage of variance explained by each principal component:');
 disp(explained'); % Display as a row vector for better readability
+
+
+%% Visualization 1: Explained Variance (Scree Plot)
+figure;
+plot(1:length(explained), explained, 'o-');
+xlabel('Principal Component Number');
+ylabel('Percentage of Variance Explained');
+title('Scree Plot: Explained Variance by Principal Components');
+grid on;
+hold on;
+% Add a line for cumulative explained variance (optional but very useful)
+cumulativeExplained = cumsum(explained);
+plot(1:length(cumulativeExplained), cumulativeExplained, 'rx-', 'DisplayName', 'Cumulative Explained Variance');
+legend('Individual PC Variance', 'Cumulative PC Variance');
+hold off;
+
+%% Visualization 2: The "Meta Neurons" (Principal Component Loadings/Coefficients)
+% Make sure to use the *correct subset* of timeBinCenters corresponding to
+% the data you fed into PCA.
+timeBinsForPlotting = timeBinCenters(postStimBinIndices); % Only plot the post-stimulus part
+
+figure;
+subplot(3,1,1); % Plotting the first 3 principal components
+plot(timeBinsForPlotting, coeff(:,1));
+title('Principal Component 1 (PC1)');
+xlabel('Time (s)');
+ylabel('Loading');
+grid on;
+
+subplot(3,1,2);
+plot(timeBinsForPlotting, coeff(:,2));
+title('Principal Component 2 (PC2)');
+xlabel('Time (s)');
+ylabel('Loading');
+grid on;
+
+subplot(3,1,3);
+plot(timeBinsForPlotting, coeff(:,3));
+title('Principal Component 3 (PC3)');
+xlabel('Time (s)');
+ylabel('Loading');
+grid on;
+
+sgtitle('Principal Component Loadings (Meta Neuron Activity Patterns - Post-Stimulus)'); % Super title for the figure
+
+%% Visualization 3: Projecting Data onto Principal Components (Scores Plot)
+% The 'score' matrix contains the coordinates of your original data (each trial of each neuron)
+% in the new principal component space.
+
+% Example: Plotting PC1 vs PC2 scores for all trials of all neurons
+figure;
+scatter(score(:,1), score(:,2), 10, 'filled', 'MarkerFaceAlpha', 0.5); % Size 10, filled, semi-transparent
+xlabel('Principal Component 1 Score');
+ylabel('Principal Component 2 Score');
+title('PCA Scores: Projection of Trial-Neuron PSTHs onto PC1 vs PC2');
+grid on;
+
+% If you want to color-code by neuron:
+figure;
+hold on;
+colors = parula(nClusters); % Or any colormap
+for idx = 1:nClusters
+    % Get scores for trials of the current neuron
+    neuronScoresPC1 = score((idx-1)*numTrials+1 : idx*numTrials, 1);
+    neuronScoresPC2 = score((idx-1)*numTrials+1 : idx*numTrials, 2);
+    scatter(neuronScoresPC1, neuronScoresPC2, 20, colors(idx,:), 'filled', 'MarkerFaceAlpha', 0.6, 'DisplayName', ['Neuron ' num2str(idx)]);
+end
+hold off;
+xlabel('Principal Component 1 Score');
+ylabel('Principal Component 2 Score');
+title('PCA Scores (PC1 vs PC2) by Neuron - Post-Stimulus');
+grid on;
+legend show;
+
+
+
+
+
+
+
+
+
+
 
 
 %% For each region do PCA of overlapped counts in half-second bins over full session - 20 sec to run
