@@ -100,7 +100,7 @@ end
 %% Plot PCA
 % bar(percentVariance,)
 bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
-bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
+bar(bins,abs(eigenvalues_PCA),'stacked'); ylabel('component size'); xlabel('s');
 
 
 %% For each region do PCA of overlapped counts in half-second bins over full session - 20 sec to run
