@@ -91,6 +91,7 @@ end
 
 %% Run PCA
 [eigenvectors_PCA, proj_PCA, eigenvalues_PCA, tsquared, explained, mu] = pca(neuralDataForPCA); % here are the default output names: [coeff, score, latent, tsquared, explained, mu] = pca(neuralDataForPCA);
+[U,S,V] = svd(neuralDataForPCA,"econ"); % here are the default output names: [coeff, score, latent, tsquared, explained, mu] = pca(neuralDataForPCA);
     % calculate singular values, and % var explain
     n = size(neuralDataForPCA, 1); % number of observations
     singularValues = sqrt(eigenvalues_PCA * (n - 1));

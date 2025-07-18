@@ -96,13 +96,17 @@ end
     singularValues = sqrt(eigenvalues_PCA * (n - 1));
     totalVariance = sum(singularValues.^2);
     percentVariance = (singularValues.^2 / totalVariance) * 100;
-
 %% Plot PCA
 % bar(percentVariance,)
 bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
-bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
 
 
+%% Running SVD (because I think I am fumbling PCA)
+[U,S,V] = svd(neuralDataForPCA,"econ");
+S = diag(S);    
+
+
+%% STUFF I HAVENT GOT TO / LOOKED AT YET: %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% For each region do PCA of overlapped counts in half-second bins over full session - 20 sec to run
 % overlapped bins are [0 .5], [.25 .75], [.5 1], [.75 1.25], ...
 K = 10; % how many PCs to capture
