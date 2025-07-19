@@ -101,22 +101,15 @@ for comboIdx = 1:length(combinations)
     analysisResults(comboIdx).timeBinCenters = linspace(win(1) + binSize/2, win(2) - binSize/2, current_numTimeBins);
 
     % Prepare data for PCA for current combination
-    numTrialsPerNeuron = size(spikes(1).binnedArray, 1); % Re-confirm as it might vary if 'spikes' differs
-
-    % current_timeByspikes = zeros(current_nClusters * numTrialsPerNeuron, current_numTimeBins);
-    current_timeByspikes = zeros(current_nClusters, current_numTimeBins);
+    currentFR = zeros(current_nClusters, current_numTimeBins);
 
     for idx = 1:current_nClusters
-        currentBinnedArray = spikes(idx).binnedArray / binSize; % Assuming conversion to firing rate
-        startRow = (idx - 1) * numTrialsPerNeuron + 1;
-        endRow = idx * numTrialsPerNeuron;
-        %current_timeByspikes(startRow:endRow, :) = currentBinnedArray;
-        current_timeByspikes(idx, :) = mean(currentBinnedArray,1);
+        currentFR(idx, :) = spikes(idx).psth;
     end
-    analysisResults(comboIdx).timeByspikes = current_timeByspikes;
+    analysisResults(comboIdx).timeByspikes = currentFR;
 
     % Perform PCA for current combination
-    [coeff, score, latent, tsquared, explained, mu] = pca( sqrt(current_timeByspikes'));
+    [coeff, score, latent, ~, explained, mu] = pca( sqrt(current_timeByspikes'));
 
     analysisResults(comboIdx).pcaResults.coeff = coeff;
     analysisResults(comboIdx).pcaResults.score = score;
@@ -178,6 +171,50 @@ for comboIdx = 1:length(analysisResults)
     ylim([0, max(max(current_explained), 45)]);
 
 end
+
+%% Visualization 2
+
+figure('Position', [100, 100, 1200, 800]); % Create a larger figure window for 6 subplots
+sgtitle('Scree Plots: Explained Variance by Principal Components Across Conditions', 'FontSize', 16, 'FontWeight', 'bold');
+
+% Loop through each combination to create a subplot
+for comboIdx = 1:length(analysisResults)
+    % Select the current subplot (2 rows, 3 columns)
+    subplot(2, 3, comboIdx); % Adjust subplot layout if you have more/fewer than 6 combinations
+
+    % Retrieve data for the current combination
+    current_explained = analysisResults(comboIdx).pcaResults.explained;
+    current_areaID = analysisResults(comboIdx).areaID;
+    current_eventName = analysisResults(comboIdx).eventName;
+
+    % --- Get the anatomical name for the current areaID ---
+    if isKey(areaIdToNameMap, current_areaID)
+        areaName = areaIdToNameMap(current_areaID);
+    else
+        areaName = sprintf('ID %d (Unknown Area)', current_areaID); % Fallback for IDs not in the map
+    end
+
+    % Calculate cumulative explained variance
+    cumulativeExplained = cumsum(current_explained);
+
+    % Plot cumulative explained variance
+    plot(1:length(cumulativeExplained), cumulativeExplained, 'rx-', ...
+         'LineWidth', 1.5, 'MarkerSize', 4, 'DisplayName', 'Cumulative Explained Variance');
+    hold off;
+
+    % Set plot properties
+    xlabel('Principal Component Number', 'FontSize', 12);
+    ylabel('Variance Explained (%)', 'FontSize', 12);
+    % Update the title to use the anatomical name
+    title(sprintf('%s, Event: %s', areaName, current_eventName), 'FontSize', 14); % Improved title
+    grid on;
+    %legend('Location', 'best', 'FontSize', 10);
+
+    % Optional: Adjust y-axis limits if needed for consistency across plots
+    ylim([10, max(max(current_explained), 100)]);
+
+end
+
 
 %% Visualization 3: Projecting Data onto Principal Components (3D Scores Plots for all Combinations)
 
