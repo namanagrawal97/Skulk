@@ -22,6 +22,7 @@ end
 % Some useful book-keeping variables used frequently later
 neuronNumEdges = (0:neurons.N) - 0.5; % bin edges for using histcounts to count neuron cluster IDs in spikes
 
+
 %% Define the combinations
 combinations(1).areaID = 10; % VISp
 combinations(1).eventName = 'stimTimes';
@@ -102,13 +103,15 @@ for comboIdx = 1:length(combinations)
     % Prepare data for PCA for current combination
     numTrialsPerNeuron = size(spikes(1).binnedArray, 1); % Re-confirm as it might vary if 'spikes' differs
 
-    current_timeByspikes = zeros(current_nClusters * numTrialsPerNeuron, current_numTimeBins);
+    % current_timeByspikes = zeros(current_nClusters * numTrialsPerNeuron, current_numTimeBins);
+    current_timeByspikes = zeros(current_nClusters, current_numTimeBins);
 
     for idx = 1:current_nClusters
         currentBinnedArray = spikes(idx).binnedArray / binSize; % Assuming conversion to firing rate
         startRow = (idx - 1) * numTrialsPerNeuron + 1;
         endRow = idx * numTrialsPerNeuron;
-        current_timeByspikes(startRow:endRow, :) = currentBinnedArray;
+        %current_timeByspikes(startRow:endRow, :) = currentBinnedArray;
+        current_timeByspikes(idx, :) = mean(currentBinnedArray,1);
     end
     analysisResults(comboIdx).timeByspikes = current_timeByspikes;
 
@@ -172,7 +175,7 @@ for comboIdx = 1:length(analysisResults)
     %legend('Location', 'best', 'FontSize', 10);
 
     % Optional: Adjust y-axis limits if needed for consistency across plots
-    ylim([0, max(max(current_explained), 8)]);
+    ylim([0, max(max(current_explained), 45)]);
 
 end
 
@@ -236,6 +239,82 @@ end
 
 
 %% NMF
+
+
+
+
+
+
+
+
+%% if export to python
+% Define the full path where you want to save your .mat file
+% It's good practice to use fullfile for cross-platform compatibility
+output_directory = '/Users/yangy1/Desktop/NDS_2025_project/project_scripts'; % e.g., create a subfolder
+output_filename = 'psth_for_python_viz.mat';
+full_export_path = fullfile(output_directory, output_filename);
+
+% Call the function
+exported_psth_data = exportPSTHDataForPython(spikes, win, binSize, full_export_path);
+
+% You can now load 'full_export_path' in Python using scipy.io.loadmat.
+
+
+
+
+%% PSTH (align to visual stimulus)
+areaID = 10; % for area VISp
+win = [-0.5,0.5]; % Original window, -0.5s to +0.5s around stimTime
+binSize = 0.02;
+selectedEvents = stimTimes;
+clusterIDs = find(neurons.region==areaID);
+nClusters = length(clusterIDs);
+
+% Initialize 'bins' outside the loop if it's consistent for all neurons
+% (which it should be if win and binSize are fixed)
+% This way, `timeBinCenters` can be calculated once after the loop.
+bins = []; % Initialize it so it's guaranteed to exist for the calculation below
+
+for idx = 1:nClusters
+    spikes(idx).clu = (clusterIDs(idx));
+    spikes(idx).spikeIndex = find(S.spikes.clusters(:)==spikes(idx).clu);
+    spikes(idx).spiketimes = S.spikes.times(spikes(idx).spikeIndex);
+
+    %organize into matrix around stimTime:
+    [spikes(idx).psth, bins, spikes(idx).rasterX, spikes(idx).rasterY, spikes(idx).spikeCounts, spikes(idx).binnedArray] = psthAndBA(spikes(idx).spiketimes, selectedEvents, win, binSize);
+    % Note: `bins` here will be updated in each iteration,
+    % taking the value from the last `idx` iteration. This is generally fine
+    % if `win` and `binSize` are constant, as the bin edges will be the same.
+end
+
+
+
+%% Prepare data for PCA
+
+nClusters = length(spikes); 
+numTrialsPerNeuron = size(spikes(1).binnedArray, 1); % Get number of trials (228)
+numTimeBins = size(spikes(1).binnedArray, 2); % Get number of time bins (50)
+
+% The total number of rows will be (number of neurons * number of trials per neuron)
+% The number of columns will be the number of time bins.
+timeByspikes = zeros(nClusters * numTrialsPerNeuron, numTimeBins);
+
+% Loop through each neuron and concatenate its binnedArray
+for idx = 1:nClusters
+    % Get the binnedArray for the current neuron
+    currentBinnedArray = spikes(idx).binnedArray/binSize;
+
+    % Calculate the starting and ending row indices for placing this neuron's data
+    startRow = (idx - 1) * numTrialsPerNeuron + 1;
+    endRow = idx * numTrialsPerNeuron;
+
+    % Concatenate (vertically stack) the current neuron's binnedArray
+    timeByspikes(startRow:endRow, :) = currentBinnedArray;
+end
+
+[coeff, score, latent, tsquared, explained, mu] = pca( sqrt(timeByspikes'));
+disp('PCA Results:');
+disp(['Total variance explained by first 5 PCs: ', num2str(sum(explained(1:5))), '%']);
 
 
 
