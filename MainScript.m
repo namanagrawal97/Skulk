@@ -7,9 +7,9 @@ clear all; close all; clc
 
 % PSTH parameters:
     selectedEvents = 'stimTimes'; %event you want the PSTH to be centered on. (make sure to input it as a string)
-    win = [-2,2.5]; % window for psth in seconds: [seconds before event, seconds after event]
+    win = [-0.5,0.5]; % window for psth in seconds: [seconds before event, seconds after event]
     binSize = 0.02; % bin size for psth in seconds
-    numOfIndividualPSTHsToPlot = 20; % number of cells you want to make individual plots for (ex. set this to 20 to plot the first 20 cells)
+    numOfIndividualPSTHsToPlot = 0; % number of cells you want to make individual plots for (ex. set this to 20 to plot the first 20 cells)
 
 %% Load data and declare variables:
 % load data:
@@ -21,6 +21,14 @@ clear all; close all; clc
     respTimes = trials.responseTime;
     goTimes = S.trials.goCue_times;
         [selectedEvents] = SelectEventVariableFromString(selectedEvents,stimTimes,respTimes,goTimes); %produces the times of your desired event (function located at bottom of script)
+
+figure; 
+plot(stimTimes,ones(size(stimTimes)),'.'); hold on;
+plot(respTimes,ones(size(stimTimes)),'r.')
+grid on; grid minor; xlabel('seconds')
+
+%minimum of 0.5s response after stimulus presentation
+%Inter trial interval minimum of 1 second
 
 % not used at the moment, but probably the best way to select selected trial types 
 % % % construct logical variable for spike timestamps in trials
@@ -81,27 +89,34 @@ end
 % % numPostStimBins = length(postStimBinIndices); % This will dynamically be 25 in your case
 
 %% Prepare data for PCA
-numTrials = size(spikes(1).psth, 2);
+numTrials = size(spikes(1).binnedArray, 1);
 numTotalTimeBins = size(spikes(1).psth, 2); % This will be 50
 
 % Initialize the matrix for PCA with the correct number of columns
 % neuralDataForPCA = zeros(numTrials * nClusters, length(bins));
 neuralDataForPCA = zeros(nClusters, length(bins));
+neuralDataForPCAnew = zeros(nClusters*numTrials,length(bins));
+k = 0
 for idx = 1:nClusters
     % Each rows corresponds to a single neuron's PSTH across all trials
     neuralDataForPCA(idx, :) = spikes(idx).psth;
+    num = ((idx-1)*numTrials)+1;
+    neuralDataForPCAnew(num:num+numTrials-1, :) = spikes(idx).binnedArray/0.02;
 end
 
-%% Run PCA
+%% Run PCA Original
+% fix: make it divide matrix by bin size
+% neuralDataForPCA = sqrt(neuralDataForPCA);
 [eigenvectors_PCA, proj_PCA, eigenvalues_PCA, tsquared, explained, mu] = pca(neuralDataForPCA); % here are the default output names: [coeff, score, latent, tsquared, explained, mu] = pca(neuralDataForPCA);
-    n = size(neuralDataForPCA, 1); % number of observations
+    n = size(neuralDataForPCA', 1); % number of observations
     singularValues = sqrt(eigenvalues_PCA * (n - 1));
     totalVariance = sum(singularValues.^2);
     percentVariance = (singularValues.^2 / totalVariance) * 100;
 %% Plot PCA
 % bar(percentVariance,)
-bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
-bar(bins,abs(eigenvectors_PCA(:,1:5)),'stacked'); ylabel('component size'); xlabel('s');
+tiledlayout(1,2);
+nexttile(1); bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
+nexttile(2); bar(bins,abs(eigenvectors_PCA(:,1:5)'),'stacked'); ylabel('component size'); xlabel('s');
 
 %% Running SVD as well (to confirm I am not fumbling with the PCA)
 [U,Smat,V] = svd(neuralDataForPCA,"econ");
@@ -112,6 +127,46 @@ figure; bar(bins,abs(V),'stacked'); %plot each component as raw eigenvalues
     title("Components' explanatory power across the trial"); ylabel('component size'); xlabel('s');
 figure; bar(bins,abs(V).*Smat','stacked'); %plot each component weighted by its singular value
     title("Weighted components' explanatory power across the trial"); ylabel('component size'); xlabel('s'); 
+
+
+%% Run PCA NEW
+% fix: make it divide matrix by bin size
+% neuralDataForPCA = sqrt(neuralDataForPCA);
+[eigenvectors_PCA, proj_PCA, eigenvalues_PCA, tsquared, explained, mu] = pca(neuralDataForPCAnew'); % here are the default output names: [coeff, score, latent, tsquared, explained, mu] = pca(neuralDataForPCA);
+    n = size(neuralDataForPCA', 1); % number of observations
+    singularValues = sqrt(eigenvalues_PCA * (n - 1));
+    totalVariance = sum(singularValues.^2);
+    percentVariance = (singularValues.^2 / totalVariance) * 100;
+%% Plot PCA
+% bar(percentVariance,)
+bar(bins,abs(eigenvectors_PCA),'stacked'); ylabel('component size'); xlabel('s');
+bar(bins,abs(eigenvectors_PCA(:,1:5)'),'stacked'); ylabel('component size'); xlabel('s');
+
+%% Running SVD as well (to confirm I am not fumbling with the PCA)
+[U,Smat,V] = svd(neuralDataForPCAnew',"econ");
+    Smat = diag(Smat); %singular values
+figure; bar(1:length(Smat),Smat); %scree plot
+    title('SVD scree plot'); ylabel('Singular Value'); xlabel('Component Number'); %xlim([0,10]); %uncomment to view just first 10
+figure; bar(bins,abs(V),'stacked'); %plot each component as raw eigenvalues
+    title("Components' explanatory power across the trial"); ylabel('component size'); xlabel('s');
+figure; bar(bins,abs(V).*Smat','stacked'); %plot each component weighted by its singular value
+    title("Weighted components' explanatory power across the trial"); ylabel('component size'); xlabel('s'); 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
